@@ -1,0 +1,44 @@
+name: Publish to npm
+
+# Publishes the package to npmjs via Trusted Publishing (OIDC): no NPM_TOKEN
+# secret — GitHub Actions authenticates to npm with an OIDC token, and npm
+# trusts this exact workflow file (the "Trusted Publisher" row configured on
+# the package's npmjs Settings page must match: publisher "GitHub Actions",
+# org/user, repository, and this filename, publish.yml).
+# Triggered by pushing a version tag (v*). Note: creating a GitHub Release
+# from that tag does NOT re-trigger this workflow (no duplicate publishes).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token for npm trusted publishing + provenance
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        # version comes from the packageManager field in package.json
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test
+        run: node test/detection.test.mjs
+
+      - name: Publish
+        run: npm publish --access public --provenance
