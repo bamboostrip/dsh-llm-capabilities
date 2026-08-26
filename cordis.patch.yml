@@ -1,0 +1,9 @@
+# Bundle patch for the dsh-llm-capabilities plugin: inserts its plugin row into
+# the DSH profile roster. Applied automatically as a profile bundle layer via
+# the `dsh.bundle.patch` manifest field.
+#
+# Install with `dsh plugin --profile web add dsh-llm-capabilities` (published
+# npm/tarball) or `dsh plugin --profile web add link:<this repo path>` (local).
+- insert:
+    - id: model-capabilities
+      name: dsh-llm-capabilities
