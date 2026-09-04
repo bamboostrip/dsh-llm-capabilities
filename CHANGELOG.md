@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2 — 2026-09-04
+
+- Compat with dsh `0.1.2-rc.1` breaking change: `@deepseek-ai/dsh-client-runtime` removed, `connection.api` gone (new handle only has `isLoopback/generation/state/rpc/reconnect/registerGenerationSource/start`). Fixes `Settings wire unavailable`.
+- Add `createApiClient(remote)` adapter in the client half: `ApiClient` surface and panel code unchanged, new `{ok, value/error}` remotes wrapped to the old `{result: ...}` envelope.
+  - `settings.describe({})` → `remote.settings.describe()`
+  - `settings.mutate({ns, ops, rev})` → `remote.settings.mutate(ns, ops, rev)`
+  - `llm.discoverModels({settingsNs, ...})` → `remote.llm.discoverModels(settingsNs, {...})` (array → `{models}` normalized)
+  - `llm.models({})` → `remote.session.modelCatalog()`
+- Client `inject`: `['connection', 'slots', 'locale']` → `['slots', 'locale', 'remote', 'remote.llm', 'remote.session', 'remote.settings']`; drop deleted `@deepseek-ai/dsh-client-runtime` from `dsh.client.inject`.
+
 ## 0.1.0 — 2026-08-26
 
 - Initial release, successor to `dsh-reasoning-efforts`.

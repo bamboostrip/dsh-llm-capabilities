@@ -1,6 +1,6 @@
 {
   "name": "dsh-llm-capabilities",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "DSH plugin: auto-detect and configure model capabilities (reasoningEfforts + input modalities) for llm-pi-ai. Successor to dsh-reasoning-efforts.",
   "type": "module",
   "packageManager": "pnpm@11.22.0",
@@ -22,7 +22,6 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-api-remotes"

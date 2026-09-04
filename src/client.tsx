@@ -68,7 +68,7 @@ interface ApiClient {
     describe(req: Record<string, never>): Promise<RpcResponse<{ writable: boolean; namespaces: SettingsNamespaceView[] }>>
     mutate(req: {
       ns: string
-      ops: Array<{ op: 'set'; path: string[]; value: unknown }>
+      ops: Array<{ op: 'set'; path: string[]; value: unknown } | { op: 'unset'; path: string[] }>
       expectedRevision?: number
     }): Promise<RpcResponse<SettingsNamespaceView>>
   }
@@ -77,9 +77,75 @@ interface ApiClient {
       settingsNs: string
       provider?: string
       baseURL?: string
+      api?: string
       apiKey?: string
     }): Promise<RpcResponse<{ models: DiscoveredModel[] }>>
     models(req: Record<string, never>): Promise<RpcResponse<CatalogValue>>
+  }
+}
+
+// ---------------------------------------------------------------------------
+// New-wire remote faces (dsh >= 0.1.2-rc.1, @deepseek-ai/dsh-api-remotes).
+// The old `connection.api` envelope `{ result: { ok, value/error } }` is gone;
+// remotes return `{ ok, value/error }` directly with positional args.
+// This adapter keeps the panel's `ApiClient` + `unwrap` untouched.
+// ---------------------------------------------------------------------------
+
+type RemoteResult<T> = { ok: true; value: T } | { ok: false; error: RpcError }
+
+interface ClientRemote {
+  settings: {
+    describe(): Promise<RemoteResult<{ writable: boolean; namespaces: SettingsNamespaceView[] }>>
+    mutate(
+      ns: string,
+      ops: Array<{ op: 'set'; path: string[]; value: unknown } | { op: 'unset'; path: string[] }>,
+      expectedRevision?: number,
+    ): Promise<RemoteResult<SettingsNamespaceView>>
+  }
+  llm: {
+    discoverModels(
+      settingsNs: string,
+      request: { provider?: string; baseURL?: string; api?: string; apiKey?: string },
+    ): Promise<RemoteResult<DiscoveredModel[] | { models: DiscoveredModel[] }>>
+  }
+  session: {
+    modelCatalog(): Promise<RemoteResult<CatalogValue>>
+  }
+}
+
+function wrapOk<T>(value: T): RpcResponse<T> {
+  return { result: { ok: true, value } }
+}
+
+function wrapErr<T>(error: RpcError): RpcResponse<T> {
+  return { result: { ok: false, error } }
+}
+
+function createApiClient(remote: ClientRemote): ApiClient {
+  return {
+    settings: {
+      describe: async () => {
+        const res = await remote.settings.describe()
+        return res.ok ? wrapOk(res.value) : wrapErr(res.error)
+      },
+      mutate: async (req) => {
+        const res = await remote.settings.mutate(req.ns, req.ops, req.expectedRevision)
+        return res.ok ? wrapOk(res.value) : wrapErr(res.error)
+      },
+    },
+    llm: {
+      discoverModels: async (req) => {
+        const { settingsNs, ...rest } = req
+        const res = await remote.llm.discoverModels(settingsNs, rest)
+        if (!res.ok) return wrapErr(res.error)
+        const value = Array.isArray(res.value) ? { models: res.value } : res.value
+        return wrapOk(value)
+      },
+      models: async () => {
+        const res = await remote.session.modelCatalog()
+        return res.ok ? wrapOk(res.value) : wrapErr(res.error)
+      },
+    },
   }
 }
 
@@ -91,7 +157,10 @@ interface LocaleService {
 }
 
 interface ClientContext {
-  get(name: 'connection'): { api: ApiClient } | undefined
+  get(name: 'remote'): ClientRemote | undefined
+  get(name: 'remote.llm'): ClientRemote['llm'] | undefined
+  get(name: 'remote.session'): ClientRemote['session'] | undefined
+  get(name: 'remote.settings'): ClientRemote['settings'] | undefined
   get(name: 'locale'): LocaleService | undefined
   get(name: 'slots'):
     | {
@@ -946,7 +1015,8 @@ export function apply(ctx: ClientContext): void {
     style.dataset.plugin = 'dsh-llm-capabilities'
     style.textContent = CSS
     document.head.appendChild(style)
-    const api = ctx.get('connection')?.api
+    const remote = ctx.get('remote')
+    const api = remote ? createApiClient(remote) : undefined
     const slots = ctx.get('slots')
     const disposeSlot = slots?.inject('settings.section', () =>
       slots.register(
@@ -972,5 +1042,5 @@ export function apply(ctx: ClientContext): void {
   }, 'model-capabilities: settings section')
 }
 
-export const inject = ['connection', 'slots', 'locale'] as const
+export const inject = ['slots', 'locale', 'remote', 'remote.llm', 'remote.session', 'remote.settings'] as const
 export const name = 'dsh-llm-capabilities'
