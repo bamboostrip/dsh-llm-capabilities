@@ -38,7 +38,7 @@ jobs:
         run: pnpm build
 
       - name: Test
-        run: node test/detection.test.mjs
+        run: pnpm test
 
       - name: Publish
         run: npm publish --access public --provenance

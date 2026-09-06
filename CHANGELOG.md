@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 — 2026-09-06
 
 - Go affinity: inject a stable `x-opencode-session` (`ses_<32hex>`) header into requests to `opencode.ai/zen/go` (covers `ocg-c`/`ocg-r`); `user-agent`/`authorization` untouched; opt-out via entry `config.sessionHeaders.enabled: false`.
 
