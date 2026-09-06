@@ -32,6 +32,7 @@ export default defineConfig([
     entry: {
       index: 'src/index.ts',
       detection: 'src/shared/detection.ts',
+      'session-headers': 'src/session-headers.ts',
     },
     format: ['esm'],
     platform: 'neutral',

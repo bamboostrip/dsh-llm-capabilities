@@ -50,6 +50,28 @@ Requires `DHS >= 0.1.1-rc.2`, `node >= 22.13`.
    - `Vision: inherit / image ✓ / text-only`
 5. **Apply to settings** → writes to `llm-pi-ai` (`providers.<route>.models`). Intensity slider and image admission update immediately.
 
+## Go session header (`x-opencode-session`)
+
+OpenCode Go requires third-party agents to send a stable `x-opencode-session`
+header for prompt-cache affinity ([docs](https://opencode.ai/docs/go/#where-can-i-use-it)).
+The host half wraps `globalThis.fetch` and sets it on requests whose URL contains
+`opencode.ai/zen/go` (covers both `ocg-c` and `ocg-r` routes). All other requests
+pass through untouched.
+
+- Session value: `ses_` + 32 hex chars, generated once and reused (stable per plugin lifetime).
+- Never touched: `user-agent` (stays `deepseek-harness/...` — Go requires honest
+  identification) and `authorization`.
+- Disable without uninstalling (profile `cordis.patch.yml`):
+
+```yaml
+- insert:
+    - id: model-capabilities
+      name: dsh-llm-capabilities
+      config:
+        sessionHeaders:
+          enabled: false
+```
+
 ## Configuration shape written
 
 ```yaml

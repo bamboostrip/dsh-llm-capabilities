@@ -25,6 +25,14 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+import {
+  DEFAULT_URL_PATTERNS,
+  SESSION_HEADER,
+  STABLE_PROCESS_KEY,
+  createSessionHeaderFetch,
+  createSessionIdStore,
+  isSessionHeaderFetch,
+} from './session-headers.js'
 
 const NS = 'llm-pi-ai'
 const ROUTE_PATH = '/model-capabilities/raw-models'
@@ -37,6 +45,19 @@ interface SettingsService {
 
 interface CredentialsService {
   resolve(ref: string): Promise<{ value?: string } | undefined>
+}
+
+export interface SessionHeadersConfig {
+  /** Default true. Set false to keep the plugin's capabilities UI while disabling header injection. */
+  enabled?: boolean
+  /** URL substring allowlist. Default `['opencode.ai/zen/go']` (covers ocg-c + ocg-r). */
+  urlPatterns?: string[]
+  /** Overriding the header name is not recommended; default is the Go-required name. */
+  headerName?: string
+}
+
+export interface PluginConfig {
+  sessionHeaders?: SessionHeadersConfig
 }
 
 interface WebServerService {
@@ -158,7 +179,32 @@ function makeHandler(ctx: Context, settings: SettingsService): (req: IncomingMes
   }
 }
 
-export function apply(ctx: Context): void {
+function registerSessionHeaders(ctx: Context, config: PluginConfig | undefined): void {
+  if (config?.sessionHeaders?.enabled === false) return
+  ctx.effect(() => {
+    const store = createSessionIdStore()
+    const original = globalThis.fetch
+    // Another copy of us (or a previous enable) already wrapped it: do not double-wrap.
+    if (isSessionHeaderFetch(original)) return () => {}
+    const patterns = config?.sessionHeaders?.urlPatterns ?? DEFAULT_URL_PATTERNS
+    const headerName = config?.sessionHeaders?.headerName ?? SESSION_HEADER
+    globalThis.fetch = createSessionHeaderFetch(original, {
+      patterns,
+      headerName,
+      getSessionId: () => store.get(STABLE_PROCESS_KEY),
+    })
+    return () => {
+      // Restore only if ours is still the outermost wrapper: never break another plugin's chain.
+      if (isSessionHeaderFetch(globalThis.fetch)) {
+        globalThis.fetch = original
+      }
+    }
+  }, 'model-capabilities: go session headers')
+}
+
+export function apply(ctx: Context, config?: PluginConfig): void {
+  registerSessionHeaders(ctx, config)
+
   const settings = ctx.get('settings') as SettingsService | undefined
   const webServer = ctx.get('webServer') as WebServerService | undefined
   if (settings === undefined || webServer === undefined) return

@@ -35,6 +35,8 @@
     "dist/client.js",
     "dist/detection.js",
     "dist/detection.d.ts",
+    "dist/session-headers.js",
+    "dist/session-headers.d.ts",
     "cordis.patch.yml"
   ],
   "keywords": [
@@ -80,7 +82,7 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
-    "test": "pnpm build && node test/detection.test.mjs",
+    "test": "pnpm build && node test/detection.test.mjs && node test/session-headers.test.mjs",
     "typecheck": "tsc --noEmit",
     "prepare": "tsdown"
   }

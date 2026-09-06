@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Go affinity: inject a stable `x-opencode-session` (`ses_<32hex>`) header into requests to `opencode.ai/zen/go` (covers `ocg-c`/`ocg-r`); `user-agent`/`authorization` untouched; opt-out via entry `config.sessionHeaders.enabled: false`.
+
 ## 0.1.2 — 2026-09-04
 
 - Compat with dsh `0.1.2-rc.1` breaking change: `@deepseek-ai/dsh-client-runtime` removed, `connection.api` gone (new handle only has `isLoopback/generation/state/rpc/reconnect/registerGenerationSource/start`). Fixes `Settings wire unavailable`.
