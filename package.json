@@ -1,6 +1,6 @@
 {
   "name": "dsh-llm-capabilities",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "DSH plugin: auto-detect and configure model capabilities (reasoningEfforts + input modalities) for llm-pi-ai. Successor to dsh-reasoning-efforts.",
   "type": "module",
   "packageManager": "pnpm@11.22.0",
@@ -82,7 +82,7 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
-    "test": "pnpm build && node test/detection.test.mjs && node test/session-headers.test.mjs",
+    "test": "pnpm build && node test/detection.test.mjs && node test/session-headers.test.mjs && node test/session-keying.test.mjs && node test/encrypted-content-retry.test.mjs",
     "typecheck": "tsc --noEmit",
     "prepare": "tsdown"
   }
