@@ -6,9 +6,7 @@ import assert from 'node:assert/strict'
 import {
   SESSION_HEADER,
   DEFAULT_URL_PATTERNS,
-  newSessionId,
   shouldInject,
-  createSessionIdStore,
   createSessionHeaderFetch,
   isSessionHeaderFetch,
 } from '../dist/session-headers.js'
@@ -21,31 +19,12 @@ function ok(msg) {
 {
   assert.equal(shouldInject('https://opencode.ai/zen/go/v1/chat/completions'), true)
   assert.equal(shouldInject('https://opencode.ai/zen/go/v1/responses'), true)
+  assert.equal(shouldInject('https://opencode.ai/zen/go/v1/messages'), true)
   assert.equal(shouldInject('https://opencode.ai/zen/go/v1/models'), true)
   assert.equal(shouldInject('https://opencode.ai/zen/v1/chat/completions'), false)
   assert.equal(shouldInject('https://api.anthropic.com/v1/messages'), false)
   assert.equal(shouldInject('https://opencode.ai/zen/go/v1/chat/completions', ['']), false)
   ok('shouldInject matches only Go URLs, empty pattern never matches')
-}
-
-// Session ID shape + uniqueness
-{
-  const a = newSessionId()
-  const b = newSessionId()
-  assert.match(a, /^ses_[0-9a-f]{32}$/)
-  assert.notEqual(a, b)
-  ok('newSessionId shape + uniqueness')
-}
-
-// Store stability
-{
-  const store = createSessionIdStore()
-  assert.equal(store.get('k'), store.get('k'))
-  assert.notEqual(store.get('k1'), store.get('k2'))
-  assert.equal(store.size, 3)
-  store.clear('k1')
-  assert.equal(store.size, 2)
-  ok('store stable per key, isolated across keys')
 }
 
 // Wrapper sets header on match, string URL

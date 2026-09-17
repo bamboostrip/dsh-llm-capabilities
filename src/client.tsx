@@ -196,6 +196,7 @@ const zh: Record<string, string> = {
   detect: '从端点检测',
   apply: '应用到设置',
   working: '处理中…',
+  modelCount: '{n} 个模型',
   saved: '已保存到 llm-pi-ai 设置（providers.{route}.models）。',
   noProviders: '在 llm-pi-ai 设置中未找到自定义服务商。',
   wireUnavailable: '设置通道不可用。',
@@ -234,6 +235,7 @@ const en: Record<string, string> = {
   detect: 'Detect from endpoint',
   apply: 'Apply to settings',
   working: 'Working…',
+  modelCount: '{n} models',
   saved: 'Saved to llm-pi-ai settings (providers.{route}.models).',
   noProviders: 'No providers found in llm-pi-ai settings.',
   wireUnavailable: 'Settings wire unavailable.',
@@ -449,6 +451,8 @@ const CSS = `
 .mc-vision{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .mc-vision label{font-size:13px;display:flex;align-items:center;gap:4px}
 .mc-divider{height:1px;background:var(--dsw-alias-border-l2);margin:4px 0}
+.mc-footer{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 0 2px;position:sticky;bottom:0;z-index:1;background:var(--dsw-alias-bg-primary,var(--dsw-alias-bg-page,#fff));border-top:1px solid var(--dsw-alias-border-l2);margin-top:4px}
+.mc-footer-spacer{flex:1}
 `
 
 interface PanelProps {
@@ -1001,6 +1005,19 @@ function ModelCapabilitiesPanel({ api, t }: PanelProps): React.ReactElement {
           )
         })}
       </ul>
+      {models.length > 0 ? (
+        <div className="mc-footer">
+          <span className="mc-name">{fmt(t('modelCount'), { n: models.length })}</span>
+          <span className="mc-footer-spacer" />
+          <button
+            className="mc-btn"
+            onClick={apply}
+            disabled={busy || Object.keys(detections).length === 0}
+          >
+            {busy ? t('working') : t('apply')}
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

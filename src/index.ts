@@ -29,9 +29,13 @@ import {
   DEFAULT_URL_PATTERNS,
   SESSION_HEADER,
   STABLE_PROCESS_KEY,
+  createRequestContext,
   createSessionHeaderFetch,
-  createSessionIdStore,
+  deriveOpenCodeSession,
   isSessionHeaderFetch,
+  rebindAsyncIterable,
+  resolveOpenCodeSession,
+  type RequestContextStore,
 } from './session-headers.js'
 
 const NS = 'llm-pi-ai'
@@ -50,10 +54,21 @@ interface CredentialsService {
 export interface SessionHeadersConfig {
   /** Default true. Set false to keep the plugin's capabilities UI while disabling header injection. */
   enabled?: boolean
-  /** URL substring allowlist. Default `['opencode.ai/zen/go']` (covers ocg-c + ocg-r). */
+  /** URL substring allowlist. Default `['opencode.ai/zen/go']` (covers ocg-c/ocg-r/ocg-a). */
   urlPatterns?: string[]
   /** Overriding the header name is not recommended; default is the Go-required name. */
   headerName?: string
+  /**
+   * Self-heal for stateless reasoning replay: on 400 "reasoning
+   * `encrypted_content` was not issued to this caller", retry once with the
+   * replayed encrypted reasoning items stripped. Default true.
+   */
+  encryptedContentRetry?: boolean
+  /**
+   * `conversation` (default): derive from dsh session id (restart-stable).
+   * `process`: legacy process-lifetime single value.
+   */
+  keying?: 'conversation' | 'process'
 }
 
 export interface PluginConfig {
@@ -179,10 +194,33 @@ function makeHandler(ctx: Context, settings: SettingsService): (req: IncomingMes
   }
 }
 
+interface LlmStreamOptions {
+  sessionId?: unknown
+  purpose?: unknown
+  provider?: unknown
+  model?: unknown
+}
+
+function stampRequestContext(options: LlmStreamOptions | undefined): RequestContextStore {
+  const sessionId =
+    typeof options?.sessionId === 'string' && options.sessionId.length > 0
+      ? options.sessionId
+      : typeof options?.sessionId === 'number'
+        ? String(options.sessionId)
+        : undefined
+  return {
+    sessionId,
+    purpose: typeof options?.purpose === 'string' ? options.purpose : undefined,
+    provider: typeof options?.provider === 'string' ? options.provider : undefined,
+    model: typeof options?.model === 'string' ? options.model : undefined,
+  }
+}
+
 function registerSessionHeaders(ctx: Context, config: PluginConfig | undefined): void {
   if (config?.sessionHeaders?.enabled === false) return
+  const keying = config?.sessionHeaders?.keying ?? 'conversation'
   ctx.effect(() => {
-    const store = createSessionIdStore()
+    const als = createRequestContext()
     const original = globalThis.fetch
     // Another copy of us (or a previous enable) already wrapped it: do not double-wrap.
     if (isSessionHeaderFetch(original)) return () => {}
@@ -191,13 +229,47 @@ function registerSessionHeaders(ctx: Context, config: PluginConfig | undefined):
     globalThis.fetch = createSessionHeaderFetch(original, {
       patterns,
       headerName,
-      getSessionId: () => store.get(STABLE_PROCESS_KEY),
+      encryptedContentRetry: config?.sessionHeaders?.encryptedContentRetry !== false,
+      getSessionId: () =>
+        keying === 'process' ? deriveOpenCodeSession(STABLE_PROCESS_KEY, 'process') : resolveOpenCodeSession(als),
     })
-    return () => {
+    const restore = () => {
       // Restore only if ours is still the outermost wrapper: never break another plugin's chain.
       if (isSessionHeaderFetch(globalThis.fetch)) {
         globalThis.fetch = original
       }
+    }
+
+    // Conversation keying only: bridge llm/stream identity into ALS so fetch
+    // (including lazy first-pull fetch) sees the dsh session id.
+    // `global: true` matches dsh-session-title — plugin contexts without
+    // inject('llm') still observe host waterfall events.
+    let offStream: (() => unknown) | undefined
+    if (keying !== 'process') {
+      const on = (ctx as Context & {
+        on?: (
+          name: string,
+          listener: (options: LlmStreamOptions, next: () => unknown) => unknown,
+          options?: { global?: boolean },
+        ) => (() => unknown) | unknown
+      }).on
+      if (typeof on === 'function') {
+        const result = on.call(
+          ctx,
+          'llm/stream',
+          (options: LlmStreamOptions, next: () => unknown) => {
+            const store = stampRequestContext(options)
+            return als.run(store, () => rebindAsyncIterable(next(), als, store))
+          },
+          { global: true },
+        )
+        if (typeof result === 'function') offStream = result as () => unknown
+      }
+    }
+
+    return () => {
+      offStream?.()
+      restore()
     }
   }, 'model-capabilities: go session headers')
 }

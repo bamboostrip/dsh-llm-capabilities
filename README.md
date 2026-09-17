@@ -55,10 +55,19 @@ Requires `DHS >= 0.1.1-rc.2`, `node >= 22.13`.
 OpenCode Go requires third-party agents to send a stable `x-opencode-session`
 header for prompt-cache affinity ([docs](https://opencode.ai/docs/go/#where-can-i-use-it)).
 The host half wraps `globalThis.fetch` and sets it on requests whose URL contains
-`opencode.ai/zen/go` (covers both `ocg-c` and `ocg-r` routes). All other requests
+`opencode.ai/zen/go` (covers `ocg-c` / `ocg-r` / `ocg-a`). All other requests
 pass through untouched.
 
-- Session value: `ses_` + 32 hex chars, generated once and reused (stable per plugin lifetime).
+- **Conversation keying (default):** `ses_` + 32 hex derived from the dsh
+  conversation id (`sha256`), so the same chat keeps the same OpenCode session
+  across restarts. Title calls use an isolated namespace; compaction rides the
+  conversation's namespace because it replays history (reasoning
+  `encrypted_content` is bound to the account that issued it).
+- **Encrypted-reasoning self-heal:** if the gateway still answers
+  `400 … reasoning 'encrypted_content' was not issued to this caller`
+  (session→account affinity lost on the gateway side), the wrapper retries
+  once with the replayed encrypted reasoning items stripped instead of
+  failing the turn. Opt out with `sessionHeaders.encryptedContentRetry: false`.
 - Never touched: `user-agent` (stays `deepseek-harness/...` — Go requires honest
   identification) and `authorization`.
 - Disable without uninstalling (profile `cordis.patch.yml`):
