@@ -1,31 +1,31 @@
 # dsh-llm-capabilities
 
-> **DSH plugin: auto-detect and configure model capabilities (reasoningEfforts + input modalities) for `llm-pi-ai`.**
-> Successor to `dsh-reasoning-efforts` — one panel patches the two fields the official `llm-pi-ai` UI leaves unconfigurable for self-hosted gateways.
+> **DSH plugin: auto-detect and configure model capabilities (reasoningEfforts + capacities) for `llm-pi-ai`.**
+> Successor to `dsh-reasoning-efforts` — one panel patches the fields the official `llm-pi-ai` UI leaves unconfigurable for self-hosted gateways.
 
 English | [简体中文](./README-zh.md)
 
 ## Why
 
-The official `llm-pi-ai` settings page for a custom provider only lets you edit `contextWindow`. Two capabilities that actually matter for routing stay hidden:
+The official `llm-pi-ai` settings page for a custom provider only lets you edit `contextWindow`. What actually matters for routing stays hidden:
 
 1. **Thinking levels** (`reasoningEfforts`) — which `off/minimal/low/medium/high/xhigh/max` the model accepts, and the wire spelling (`max: ultra`) each level maps to. Without this the intensity slider says *“this model provides no selectable thinking levels”*.
-2. **Vision** (`input: ["text","image"]`) — whether the model accepts images. Without this a gateway model that *does* do vision is still `["text"]` locally, so every image attachment is rejected pre-flight with `UNSUPPORTED_CONTENT` before it ever reaches the endpoint.
 
-Both are per-model fields on `providers.<route>.models[]` that `pi-ai` already understands. This plugin just makes them editable **and auto-detectable**.
+Vision (`input`) used to be the second gap, but the official UI declares input modalities itself now — so since 0.2.0 this plugin leaves `input` strictly alone (existing values are preserved untouched on every save).
 
 If you came from `dsh-reasoning-efforts`: keep it, it still works. `dsh-llm-capabilities` serves both endpoints (`/model-capabilities/raw-models` and legacy `/thinking-levels/raw-models`) so old clients keep working. New installs should use this package.
 
 ## What it does
 
 - **One settings page** `Settings → Model Capabilities`
-- **Auto-detect from endpoint**: fetches `GET {baseURL}/models` server-side (credential resolved host-side, no key leak), parses:
+- **Auto-detect on selection**: picking a provider fetches `GET {baseURL}/models` server-side (credential resolved host-side, no key leak) and parses:
   - `supported_features: ["reasoning"]`, `supported_parameters`, `supports_reasoning`, `reasoning_effort` … → reasoning
-  - `modalities` / `input_modalities` / `supported_modalities` / `supports_vision` / `capabilities: ["vision"]` … → vision
   - `context_length`, `max_output_tokens` … → capacities
 - **Catalog-aware**: merges `llm.models()` (pi-ai's own knowledge) as a complementary source — the endpoint wins for yes/no, the catalog refines the level set and stands in when the endpoint says nothing.
-- **New models**: endpoint lists a model you haven't configured yet → it shows up with a `not configured` badge, applying will add it.
-- **Three-state vision**: `inherit` (omit `input`, use catalog/default) / `image ✓` (`["text","image"]`) / `text-only` (`["text"]`)
+- **Configured state echoes back**: re-detection never erases saved `reasoningEfforts` — models already configured show their own levels (custom wire spellings included) whether or not the endpoint lists signals.
+- **New models**: endpoint lists a model you haven't configured yet → it shows up with a `not configured` badge, saving will add it.
+- **Vision preserved**: `input` is never written or removed; whatever the official UI declared stays as-is.
+- **Sticky save bar**: a single “Save changes” button pinned to the bottom of the list while you scroll — no scrolling back to the top; frosted-glass surface so list content never bleeds through.
 - **Safe writes**: `settings.mutate` with `expectedRevision`, deep-cloned `models` array, no other provider fields are touched.
 
 ## Install
@@ -43,12 +43,9 @@ Requires `DHS >= 0.1.1-rc.2`, `node >= 22.13`.
 ## Usage
 
 1. Add your provider in `Settings → Models` as usual (route, baseURL, apiKeyEnv).
-2. Open `Settings → Model Capabilities`, pick the provider.
-3. Click **Detect from endpoint** (or **Pre-fill from catalog** for catalog models).
-4. Toggle per model:
-   - `Offer thinking levels` → pick `off/low/medium/high/xhigh/max`, edit wire spellings inline
-   - `Vision: inherit / image ✓ / text-only`
-5. **Apply to settings** → writes to `llm-pi-ai` (`providers.<route>.models`). Intensity slider and image admission update immediately.
+2. Open `Settings → Model Capabilities` and pick the provider — detection runs automatically.
+3. Toggle `Offer thinking levels` per model: pick `off/low/medium/high/xhigh/max`; customize wire spellings via the pencil icon when needed.
+4. **Save changes** → writes to `llm-pi-ai` (`providers.<route>.models`). The intensity slider updates immediately; `input`/vision stays however the official UI set it.
 
 ## Go session header (`x-opencode-session`)
 
@@ -91,8 +88,8 @@ llm-pi-ai:
       api: openai-completions
       models:
         - id: gpt-4o
-          input: [text, image]          # vision
-          reasoningEfforts:              # thinking
+          input: [text, image]          # vision — written by the official UI, preserved by this plugin
+          reasoningEfforts:              # thinking — written by this plugin
             off: null
             low: low
             medium: medium
@@ -128,8 +125,7 @@ The web bundle is a `window.__ModuleLoader__.load({id, factory})` closure — no
 |  | dsh-reasoning-efforts | dsh-llm-capabilities (this) |
 |---|---|---|
 | reasoning auto-detect | ✅ | ✅ (ported, strict TS) |
-| vision auto-detect | ❌ | ✅ |
-| input write | ❌ | ✅ |
+| vision | ❌ | handled by the official UI; `input` preserved on save |
 | host route | `/thinking-levels/raw-models` | `/model-capabilities/raw-models` + legacy compat |
 
 Migrate when ready — both can coexist during the transition.

@@ -2,11 +2,14 @@
  * Client half of the DSH Model Capabilities plugin.
  *
  * Successor to dsh-reasoning-efforts. Registers one additive
- * `settings.section` page ("Model Capabilities") that lets the user
- * fix the two fields the official llm-pi-ai UI leaves unconfigurable
- * for self-hosted gateways:
- *   1. thinking levels  (reasoningEfforts)
- *   2. vision capability (input: ["text"] vs ["text","image"])
+ * `settings.section` page ("Model Capabilities") that patches the fields
+ * the official llm-pi-ai UI leaves unconfigurable for self-hosted gateways:
+ *   1. thinking levels (reasoningEfforts)
+ *   2. context / output capacities
+ *
+ * Vision (`input`) is intentionally NOT touched since 0.2.0: the official
+ * llm-pi-ai UI declares input modalities itself now, so this panel neither
+ * shows nor writes `input` — existing values are preserved untouched.
  *
  * Strict TS, no `any`. All wire types are locally declared.
  */
@@ -15,7 +18,6 @@ import * as React from 'react'
 import type {
   ApiModelEntry,
   DetectionResult,
-  InputModality,
   ReasoningEfforts,
 } from './shared/types.js'
 import {
@@ -54,8 +56,6 @@ interface SettingsNamespaceView {
 interface CatalogModelEntry {
   id: string
   reasoning?: CatalogReasoning
-  // pi-ai may expose inputModalities directly; treat as unknown and guard
-  inputModalities?: readonly string[]
 }
 
 interface CatalogValue {
@@ -191,77 +191,75 @@ const zh: Record<string, string> = {
   nav: '模型能力',
   title: '模型能力',
   intro:
-    '一处补齐自建模型在 llm-pi-ai 配置里缺的两块能力：思考档位（reasoningEfforts）和视觉能力（input）。目录已知的档位可一键预填；端点检测会填充上下文/输出容量、自动识别是否支持思考与图片，并列出服务商已提供但尚未配置的模型。保存将写入 llm-pi-ai 设置（providers.<route>.models）。',
-  prefill: '从目录预填',
-  detect: '从端点检测',
-  apply: '应用到设置',
+    '补齐自建服务商在 llm-pi-ai 里不可配的字段：思考档位（reasoningEfforts）与上下文/输出容量。选中服务商后自动从端点检测，并结合模型目录判断各模型是否支持思考；调整后点“保存更改”写入 providers.<route>.models。视觉能力（input）已由官方模型设置管理，此处不再修改。',
+  detect: '检测能力',
+  redetect: '重新检测',
+  apply: '保存更改',
   working: '处理中…',
   modelCount: '{n} 个模型',
   saved: '已保存到 llm-pi-ai 设置（providers.{route}.models）。',
+  savedDone: '已保存 ✓',
   noProviders: '在 llm-pi-ai 设置中未找到自定义服务商。',
   wireUnavailable: '设置通道不可用。',
   // reasoning
   offerLevels: '提供思考档位',
+  resetLevels: '重置默认',
+  levelsHint: '点击选择要提供的档位；点铅笔图标可自定义发往 API 的档位名。',
+  editLevel: '自定义档位名',
   badgeReasoning: '思考 ✓',
-  badgeOff: '思考关闭',
+  badgeOff: '无思考',
   badgeUnknown: '未知',
   badgeNotConfigured: '未配置',
-  // vision
-  visionLabel: '视觉能力',
-  visionInherit: '继承默认',
-  visionOn: '支持图片',
-  visionOff: '仅文本',
-  badgeVision: '视觉 ✓',
-  badgeTextOnly: '仅文本',
   // caps
   capCtx: '上下文 {n}K',
   capOut: '输出 {n}K',
   noteMissing: '模型未出现在端点列表中（请检查 API key，或该服务商不提供可用的 /models 列表）',
-  noteNew: '端点已提供该模型但尚未配置；应用后会将其加入设置',
+  noteNew: '端点已提供该模型但尚未配置；保存后会将其加入设置',
   srcEndpoint: '端点',
   srcCatalog: '目录',
-  rawFallbackNote: '原始 /models 读取失败（{detail}），已回退官方发现通道（仅容量，不含推理/视觉信号）',
+  rawFallbackNote: '原始 /models 读取失败（{detail}），已回退官方发现通道（仅容量，不含推理信号）',
+  detectUnavailable: '该服务商没有可用模型目录，也没有可访问的 baseURL（{detail}）。已回显当前已保存的配置，可直接手动编辑。',
   errNotLoaded: 'llm-pi-ai 设置尚未加载',
   errNoCatalog: '模型目录没有该服务商的思考档位信息，请手动设置。',
-  errNothingToApply: '没有可应用的内容：请先为至少一个模型启用思考档位或修改视觉能力。',
+  errNothingToApply: '没有可保存的修改：请先检测，或在模型上开启思考档位。',
 }
 
 const en: Record<string, string> = {
   nav: 'Model Capabilities',
   title: 'Model Capabilities',
   intro:
-    'Patch the two capabilities the official llm-pi-ai UI leaves unconfigurable for self-hosted gateways: thinking levels (reasoningEfforts) and vision (input). Catalog-known levels can be pre-filled; endpoint detection fills context/output capacities, auto-detects reasoning + image support, and lists models the provider advertises but settings do not configure yet. Saving writes to llm-pi-ai settings (providers.<route>.models).',
-  prefill: 'Pre-fill from catalog',
-  detect: 'Detect from endpoint',
-  apply: 'Apply to settings',
+    'Patch the fields the official llm-pi-ai UI leaves unconfigurable for self-hosted gateways: thinking levels (reasoningEfforts) and context/output capacities. Detecting runs automatically per provider (endpoint + model catalog); edit, then hit "Save changes" to write providers.<route>.models. Vision (input) is managed by the official model settings and is left untouched here.',
+  detect: 'Detect',
+  redetect: 'Re-detect',
+  apply: 'Save changes',
   working: 'Working…',
   modelCount: '{n} models',
   saved: 'Saved to llm-pi-ai settings (providers.{route}.models).',
+  savedDone: 'Saved ✓',
   noProviders: 'No providers found in llm-pi-ai settings.',
   wireUnavailable: 'Settings wire unavailable.',
   offerLevels: 'Offer thinking levels',
+  resetLevels: 'Reset',
+  levelsHint: 'Click to offer a level; the pencil icon customizes the wire spelling.',
+  editLevel: 'Edit wire spelling',
   badgeReasoning: 'reasoning ✓',
-  badgeOff: 'reasoning off',
+  badgeOff: 'no reasoning',
   badgeUnknown: 'unknown',
   badgeNotConfigured: 'not configured',
-  visionLabel: 'Vision',
-  visionInherit: 'inherit',
-  visionOn: 'image ✓',
-  visionOff: 'text-only',
-  badgeVision: 'vision ✓',
-  badgeTextOnly: 'text-only',
   capCtx: 'ctx {n}K',
   capOut: 'out {n}K',
   noteMissing:
     'model not present in the endpoint listing (check the API key, or the provider exposes no usable /models listing)',
-  noteNew: 'advertised by the endpoint but not configured yet; applying will add it',
+  noteNew: 'advertised by the endpoint but not configured yet; saving will add it',
   srcEndpoint: 'endpoint',
   srcCatalog: 'catalog',
   rawFallbackNote:
-    'raw /models read failed ({detail}); fell back to the official discovery channel (capacities only, no reasoning/vision signals)',
+    'raw /models read failed ({detail}); fell back to the official discovery channel (capacities only, no reasoning signals)',
+  detectUnavailable:
+    'No model catalog for this provider and no reachable baseURL ({detail}). Showing the saved configuration; edit levels by hand.',
   errNotLoaded: 'llm-pi-ai settings not loaded yet',
   errNoCatalog: 'The model catalog reports no reasoning knowledge for this provider; set levels manually.',
-  errNothingToApply: 'Nothing to apply: enable thinking levels or change vision on at least one model first.',
+  errNothingToApply: 'Nothing to save: run detection first, or enable thinking levels on a model.',
 }
 
 const fallbackT: Translator = (key) => en[key] ?? key
@@ -409,13 +407,35 @@ function mergeCatalogInto(
   return det
 }
 
-// Strict helper to read vision from catalog if exposed
-function catalogVisionOf(group: CatalogModelEntry | undefined): InputModality[] | undefined {
-  if (!group?.inputModalities) return undefined
-  const mods = group.inputModalities.map((s) => s.toLowerCase())
-  if (mods.includes('image')) return ['text', 'image']
-  if (mods.includes('text')) return ['text']
-  return undefined
+/**
+ * Echo the already-saved configuration back into a detection result.
+ *
+ * The saved `reasoningEfforts` are the baseline: detection fills gaps, it
+ * never erases them (otherwise a re-detect on a silent endpoint/catalog made
+ * configured models look like thinking was off). Custom wire spellings thus
+ * survive re-detection. The one upgrade detection may still apply: an
+ * explicit `reasoningEfforts: false` becomes "supported" when the
+ * endpoint/catalog affirmatively says the model reasons.
+ */
+function withConfiguredBaseline(
+  det: DetectionResult,
+  configured: Record<string, unknown> | undefined,
+): DetectionResult {
+  if (!configured) return det
+  const cfg = configured.reasoningEfforts
+  if (cfg !== null && typeof cfg === 'object' && !Array.isArray(cfg)) {
+    return {
+      ...det,
+      reasoning: 'manual',
+      reasoningSource: undefined,
+      reasoningEfforts: cloneJson(cfg) as ReasoningEfforts,
+    }
+  }
+  if (cfg === false) {
+    if (det.reasoning === true) return det
+    return { ...det, reasoning: 'off', reasoningEfforts: undefined }
+  }
+  return det
 }
 
 // ---------------------------------------------------------------------------
@@ -423,37 +443,66 @@ function catalogVisionOf(group: CatalogModelEntry | undefined): InputModality[] 
 // ---------------------------------------------------------------------------
 
 const CSS = `
-.mc-root{max-width:780px;color:var(--dsw-alias-label-primary);display:flex;flex-direction:column;gap:14px}
-.mc-title{margin:0;font-size:16px;font-weight:500;line-height:24px}
+.mc-root{max-width:780px;color:var(--dsw-alias-label-primary);display:flex;flex-direction:column;gap:12px}
+.mc-title{margin:0;font-size:16px;font-weight:600;line-height:24px}
 .mc-intro{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary)}
-.mc-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.mc-select{height:34px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-field-fill);color:var(--dsw-alias-label-primary);font:inherit;padding:0 10px;min-width:220px}
-.mc-btn{height:34px;border:none;border-radius:17px;padding:0 16px;font:inherit;font-size:13px;line-height:20px;cursor:pointer;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
-.mc-btn:disabled{opacity:.55;cursor:default}
+.mc-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mc-select{height:32px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-field-fill);color:var(--dsw-alias-label-primary);font:inherit;padding:0 10px;min-width:180px;max-width:320px}
+.mc-count{font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.mc-spacer{flex:1}
+.mc-btn{height:32px;border:none;border-radius:16px;padding:0 14px;font:inherit;font-size:13px;line-height:20px;cursor:pointer;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
+.mc-btn:hover:not(:disabled){opacity:.88}
+.mc-btn:disabled{opacity:.5;cursor:default}
 .mc-btn.ghost{background:var(--dsw-alias-button-secondary-fill);color:var(--dsw-alias-label-primary)}
 .mc-err{color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px;margin:0}
 .mc-note{color:var(--dsw-alias-state-warn-label);font-size:12px;line-height:18px;margin:0}
+.mc-ok{color:var(--dsw-alias-state-success-primary);font-size:12px;line-height:18px;margin:0}
 .mc-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .mc-card{border:1px solid var(--dsw-alias-border-l2);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
 .mc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.mc-id{font-size:14px;font-weight:500;line-height:22px}
-.mc-name{color:var(--dsw-alias-label-tertiary);font-size:12px}
-.mc-badge{font-size:11px;line-height:16px;border-radius:4px;padding:1px 6px;border:1px solid var(--dsw-alias-border-l3)}
-.mc-badge.yes{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}
-.mc-badge.no{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}
-.mc-badge.unk{color:var(--dsw-alias-state-warn-label);border-color:var(--dsw-alias-state-warn-label)}
-.mc-badge.vision{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}
+.mc-id{font-size:14px;font-weight:600;line-height:22px}
+.mc-name{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px}
+.mc-head-badges{margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.mc-badge{font-size:11px;line-height:16px;border-radius:999px;padding:1px 8px;border:1px solid var(--dsw-alias-border-l3);color:var(--dsw-alias-label-tertiary)}
+.mc-badge.yes{color:var(--dsw-alias-state-success-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-success-primary) 40%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent)}
+.mc-badge.new{color:var(--dsw-alias-state-warn-label);border-color:color-mix(in srgb,var(--dsw-alias-state-warn-label) 40%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-warn-label) 10%,transparent)}
+.mc-src{font-size:11px;color:var(--dsw-alias-label-tertiary)}
 .mc-cap{font-size:12px;color:var(--dsw-alias-label-secondary)}
-.mc-toggle{display:flex;align-items:center;gap:6px;font-size:13px}
-.mc-efforts{display:flex;flex-wrap:wrap;gap:6px}
-.mc-chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;border:1px solid var(--dsw-alias-border-l3);border-radius:6px;padding:2px 8px}
-.mc-chip input[type=text]{width:64px;border:none;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;border-bottom:1px dashed var(--dsw-alias-border-l3)}
-.mc-vision{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.mc-vision label{font-size:13px;display:flex;align-items:center;gap:4px}
-.mc-divider{height:1px;background:var(--dsw-alias-border-l2);margin:4px 0}
-.mc-footer{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 0 2px;position:sticky;bottom:0;z-index:1;background:var(--dsw-alias-bg-primary,var(--dsw-alias-bg-page,#fff));border-top:1px solid var(--dsw-alias-border-l2);margin-top:4px}
-.mc-footer-spacer{flex:1}
+.mc-divider{height:1px;background:var(--dsw-alias-border-l2)}
+.mc-footer{position:sticky;bottom:0;z-index:2;display:flex;align-items:center;gap:10px;margin-top:2px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:color-mix(in srgb,var(--dsw-alias-field-fill) 86%,transparent);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);box-shadow:0 8px 24px rgba(0,0,0,.14)}
+.mc-switch-row{display:flex;align-items:center;gap:10px}
+.mc-switch-label{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none}
+.mc-switch{position:relative;display:inline-block;width:34px;height:20px;flex:none}
+.mc-switch input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;cursor:pointer}
+.mc-track{position:absolute;inset:0;border-radius:10px;border:1px solid var(--dsw-alias-border-l3);background:var(--dsw-alias-button-secondary-fill);transition:background .15s ease,border-color .15s ease;pointer-events:none}
+.mc-knob{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--dsw-alias-label-tertiary);transition:transform .15s ease,background .15s ease}
+.mc-switch input:checked+.mc-track{background:var(--dsw-alias-button-primary-fill);border-color:transparent}
+.mc-switch input:checked+.mc-track .mc-knob{transform:translateX(16px);background:var(--dsw-alias-label-primary-foreground,#fff)}
+.mc-switch input:disabled~.mc-track{opacity:.5}
+.mc-switch:has(input:focus-visible) .mc-track{outline:2px solid var(--dsw-alias-button-primary-fill);outline-offset:1px}
+.mc-link{border:none;background:none;padding:0;font:inherit;font-size:12px;color:var(--dsw-alias-label-tertiary);cursor:pointer;text-decoration:underline dotted}
+.mc-link:hover:not(:disabled){color:var(--dsw-alias-label-secondary)}
+.mc-link:disabled{cursor:default;opacity:.5}
+.mc-efforts{display:flex;flex-direction:column;gap:6px}
+.mc-hint{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
+.mc-pills{display:flex;flex-wrap:wrap;gap:6px}
+.mc-pill{position:relative;display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l3);border-radius:999px;padding:2px 6px 2px 10px;font-size:12px;line-height:20px;color:var(--dsw-alias-label-secondary);cursor:pointer;user-select:none;transition:border-color .15s ease,color .15s ease,background .15s ease}
+.mc-pill:hover{border-color:var(--dsw-alias-label-tertiary)}
+.mc-pill.active{border-color:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-button-primary-fill);background:color-mix(in srgb,var(--dsw-alias-button-primary-fill) 10%,transparent)}
+.mc-pill input[type=checkbox]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.mc-pill:has(input:focus-visible){outline:2px solid var(--dsw-alias-button-primary-fill);outline-offset:1px}
+.mc-pill-edit{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border:none;border-radius:50%;background:none;padding:0;color:inherit;opacity:.55;cursor:pointer}
+.mc-pill-edit:hover:not(:disabled){opacity:1;background:color-mix(in srgb,currentColor 14%,transparent)}
+.mc-pill-edit.on{opacity:1}
+.mc-pill-edit:disabled{cursor:default}
+.mc-pill-edit svg{display:block}
+.mc-pill input[type=text]{width:64px;border:none;border-bottom:1px solid color-mix(in srgb,currentColor 45%,transparent);background:transparent;color:inherit;font:inherit;font-size:12px;line-height:18px;padding:0 2px;outline:none}
+.mc-pill input[type=text]:focus{border-bottom-color:currentColor}
 `
+
+// ---------------------------------------------------------------------------
+// Panel
+// ---------------------------------------------------------------------------
 
 interface PanelProps {
   api: ApiClient
@@ -464,13 +513,27 @@ function ModelCapabilitiesPanel({ api, t }: PanelProps): React.ReactElement {
   const [providers, setProviders] = React.useState<ProviderView[]>([])
   const [route, setRoute] = React.useState<string>('')
   const [revision, setRevision] = React.useState<number | undefined>(undefined)
-  const [detections, setDetections] = React.useState<Record<string, DetectionResult>>({})
+  // Detections (and manual edits) are keyed by provider route so switching
+  // back and forth does not lose work.
+  const [detectionsByRoute, setDetectionsByRoute] = React.useState<Record<string, Record<string, DetectionResult>>>({})
   const [busy, setBusy] = React.useState<boolean>(false)
   const [error, setError] = React.useState<string | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
   const [saved, setSaved] = React.useState<boolean>(false)
+  const [justSaved, setJustSaved] = React.useState<boolean>(false)
+  // Which level pills have their wire-spelling editor open (keys: `${id}:${level}`).
+  const [editingLevels, setEditingLevels] = React.useState<Set<string>>(new Set())
+  const savedTimer = React.useRef<number | undefined>(undefined)
+  const detectedOnce = React.useRef<Set<string>>(new Set())
+
+  React.useEffect(() => () => window.clearTimeout(savedTimer.current), [])
 
   const selected: ProviderView | null = providers.find((p) => p.route === route) ?? null
+  const detections: Record<string, DetectionResult> = detectionsByRoute[route] ?? {}
+
+  const setRouteDetections = React.useCallback((r: string, next: Record<string, DetectionResult>): void => {
+    setDetectionsByRoute((prev) => ({ ...prev, [r]: next }))
+  }, [])
 
   const load = React.useCallback(async (): Promise<void> => {
     setBusy(true)
@@ -483,7 +546,6 @@ function ModelCapabilitiesPanel({ api, t }: PanelProps): React.ReactElement {
       const list = providersOf(view)
       setProviders(list)
       setRevision(typeof view.revision === 'number' ? view.revision : undefined)
-      setDetections({})
       setRoute((current) => (list.some((p) => p.route === current) ? current : (list[0]?.route ?? '')))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -492,254 +554,212 @@ function ModelCapabilitiesPanel({ api, t }: PanelProps): React.ReactElement {
     }
   }, [api, t])
 
-  React.useEffect(() => {
-    void load()
-  }, [load])
-
-  const onRouteChange = (value: string): void => {
-    setRoute(value)
-    setDetections({})
-    setError(null)
-    setNotice(null)
-    setSaved(false)
-  }
-
-  const prefillFromCatalog = async (): Promise<void> => {
+  const runDetect = React.useCallback(async (manual = false): Promise<void> => {
     if (!selected) return
-    setBusy(true)
-    setError(null)
-    setNotice(null)
-    setSaved(false)
-    try {
-      const catalog = unwrap(await api.llm.models({}))
-      const known = knownReasoningOf(catalog).get(selected.route)
-      const next: Record<string, DetectionResult> = {}
-      for (const m of selected.models) {
-        const id = (m as { id: string }).id
-        const info = known?.get(id)
-        // try to read vision from catalog if exposed
-        const group = catalog.groups.find((g) => g.id === selected.route)
-        const catEntry = group?.models.find((x) => x.id === id)
-        const catVision = catalogVisionOf(catEntry)
-        const vision: DetectionResult['vision'] =
-          catVision?.includes('image' as InputModality) ? true : catVision ? false : 'unknown'
-        next[id] = info
-          ? {
-              id,
-              found: true,
-              reasoning: true,
-              reasoningSource: 'llm catalog',
-              reasoningEfforts: defaultManualEfforts(info.levels),
-              vision,
-              visionSource: catVision ? 'llm catalog' : undefined,
-              input: catVision,
-              confidence: 'medium',
-            }
-          : {
-              id,
-              found: true,
-              reasoning: 'unknown',
-              vision,
-              visionSource: catVision ? 'llm catalog' : undefined,
-              input: catVision,
-              confidence: 'low',
-            }
-      }
-      setDetections(next)
-      if (!known || known.size === 0) setError(t('errNoCatalog'))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const detectAll = async (): Promise<void> => {
-    if (!selected) return
+    const currentRoute = selected.route
     setBusy(true)
     setError(null)
     setNotice(null)
     setSaved(false)
     try {
       let known: Map<string, { levels: string[]; defaultEffort?: string }> | undefined
-      let catalogGroups: CatalogValue | undefined
       try {
         const cat = unwrap(await api.llm.models({}))
-        catalogGroups = cat
-        known = knownReasoningOf(cat).get(selected.route)
+        known = knownReasoningOf(cat).get(currentRoute)
       } catch {
         known = undefined
       }
 
-      const raw = await fetchRawModels(selected.route)
+      const raw = await fetchRawModels(currentRoute)
       if (raw.data !== undefined) {
         const entries = new Map<string, ApiModelEntry>(raw.data.map((entry) => [String(entry?.id ?? ''), entry]))
         const next: Record<string, DetectionResult> = {}
         for (const m of selected.models) {
           const id = (m as { id: string }).id
           const merged = mergeCatalogInto(detectModel(id, entries.get(id)), known?.get(id))
-          // enrich vision from catalog if raw was unknown
-          if (merged.vision === 'unknown' && catalogGroups) {
-            const g = catalogGroups.groups.find((x) => x.id === selected.route)
-            const ce = g?.models.find((x) => x.id === id)
-            const cv = catalogVisionOf(ce)
-            if (cv) {
-              merged.vision = cv.includes('image' as InputModality) ? true : false
-              merged.visionSource = 'llm catalog'
-              merged.input = cv
-            }
-          }
-          next[id] = merged
+          const echoed = withConfiguredBaseline(merged, m)
+          next[id] = echoed.found ? echoed : { ...echoed, note: t('noteMissing') }
         }
         const configured = new Set<string>(selected.models.map((m) => (m as { id: string }).id))
         for (const [id, entry] of entries) {
           if (id.length === 0 || configured.has(id)) continue
           const det = mergeCatalogInto(detectModel(id, entry), known?.get(id))
-          next[id] = { ...det, note: det.found ? t('noteNew') : t('noteMissing') }
+          next[id] = { ...det, note: t('noteNew') }
         }
-        setDetections(next)
+        setRouteDetections(currentRoute, next)
         return
       }
 
-      // Fallback: official discovery (capacities only)
-      const value = unwrap(await api.llm.discoverModels({ settingsNs: NS, provider: selected.route }))
-      const found = new Map<string, DiscoveredModel>(value.models.map((m) => [m.id, m]))
-      const next: Record<string, DetectionResult> = {}
+      // Fallback: official discovery (capacities only, no reasoning signals)
+      let discovered: DiscoveredModel[] | undefined
+      let discoverError: string | undefined
+      try {
+        const value = unwrap(await api.llm.discoverModels({ settingsNs: NS, provider: currentRoute }))
+        discovered = value.models
+      } catch (e) {
+        discoverError = e instanceof Error ? e.message : String(e)
+      }
+
+      if (discovered !== undefined) {
+        const found = new Map<string, DiscoveredModel>(discovered.map((m) => [m.id, m]))
+        const next: Record<string, DetectionResult> = {}
+        for (const m of selected.models) {
+          const id = (m as { id: string }).id
+          const entry = found.get(id)
+          const info = known?.get(id)
+          const detected: DetectionResult = entry
+            ? {
+                id,
+                found: true,
+                reasoning: info ? true : 'unknown',
+                reasoningSource: info ? 'llm catalog' : undefined,
+                reasoningEfforts: info ? defaultManualEfforts(info.levels) : undefined,
+                vision: 'unknown',
+                confidence: info ? 'medium' : 'low',
+                contextWindow: entry.contextWindow,
+                maxTokens: entry.maxTokens,
+                name: entry.name,
+              }
+            : {
+                id,
+                found: false,
+                reasoning: 'unknown',
+                vision: 'unknown',
+                confidence: 'low',
+                note: t('noteMissing'),
+              }
+          next[id] = withConfiguredBaseline(detected, m)
+        }
+        const configured = new Set<string>(selected.models.map((m) => (m as { id: string }).id))
+        for (const [id, entry] of found) {
+          if (configured.has(id)) continue
+          const info = known?.get(id)
+          next[id] = {
+            id,
+            found: true,
+            reasoning: info ? true : 'unknown',
+            reasoningSource: info ? 'llm catalog' : undefined,
+            reasoningEfforts: info ? defaultManualEfforts(info.levels) : undefined,
+            vision: 'unknown',
+            confidence: info ? 'medium' : 'low',
+            contextWindow: entry.contextWindow,
+            maxTokens: entry.maxTokens,
+            name: entry.name,
+            note: t('noteNew'),
+          }
+        }
+        setRouteDetections(currentRoute, next)
+        setNotice(fmt(t('rawFallbackNote'), { detail: raw.error ?? '' }))
+        return
+      }
+
+      // Neither source is reachable (no baseURL, no shipped catalog — e.g.
+      // pure gateway routes): echo the saved configuration instead of erroring,
+      // so the page still reflects current state. A manual re-detect gets a
+      // soft notice explaining why there is nothing to probe.
+      const echo: Record<string, DetectionResult> = {}
       for (const m of selected.models) {
         const id = (m as { id: string }).id
-        const entry = found.get(id)
-        const info = known?.get(id)
-        next[id] = entry
-          ? {
-              id,
-              found: true,
-              reasoning: info ? true : 'unknown',
-              reasoningSource: info ? 'llm catalog' : undefined,
-              reasoningEfforts: info ? defaultManualEfforts(info.levels) : undefined,
-              vision: 'unknown',
-              confidence: info ? 'medium' : 'low',
-              contextWindow: entry.contextWindow,
-              maxTokens: entry.maxTokens,
-              name: entry.name,
-            }
-          : {
-              id,
-              found: false,
-              reasoning: 'unknown',
-              vision: 'unknown',
-              confidence: 'low',
-              note: t('noteMissing'),
-            }
+        echo[id] = withConfiguredBaseline(
+          { id, found: false, reasoning: 'unknown', vision: 'unknown', confidence: 'low' },
+          m,
+        )
       }
-      const configured = new Set<string>(selected.models.map((m) => (m as { id: string }).id))
-      for (const [id, entry] of found) {
-        if (configured.has(id)) continue
-        const info = known?.get(id)
-        next[id] = {
-          id,
-          found: true,
-          reasoning: info ? true : 'unknown',
-          reasoningSource: info ? 'llm catalog' : undefined,
-          reasoningEfforts: info ? defaultManualEfforts(info.levels) : undefined,
-          vision: 'unknown',
-          confidence: info ? 'medium' : 'low',
-          contextWindow: entry.contextWindow,
-          maxTokens: entry.maxTokens,
-          name: entry.name,
-          note: t('noteNew'),
-        }
-      }
-      setDetections(next)
-      setNotice(fmt(t('rawFallbackNote'), { detail: raw.error ?? '' }))
+      setRouteDetections(currentRoute, echo)
+      if (manual) setNotice(fmt(t('detectUnavailable'), { detail: discoverError ?? raw.error ?? '' }))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
+  }, [api, t, selected, setRouteDetections])
+
+  React.useEffect(() => {
+    void load()
+  }, [load])
+
+  // Auto-detect once per provider route (manual edits survive switching).
+  React.useEffect(() => {
+    if (!selected) return
+    const r = selected.route
+    if (detectedOnce.current.has(r)) return
+    detectedOnce.current.add(r)
+    void runDetect(false)
+  }, [selected, runDetect])
+
+  const onRouteChange = (value: string): void => {
+    setRoute(value)
+    setError(null)
+    setNotice(null)
+    setSaved(false)
+  }
+
+  const updateDetection = (id: string, patch: (cur: DetectionResult) => DetectionResult): void => {
+    if (!selected) return
+    const r = selected.route
+    setDetectionsByRoute((prev) => {
+      const curMap = prev[r] ?? {}
+      const cur: DetectionResult = curMap[id] ?? {
+        id,
+        found: true,
+        reasoning: 'unknown',
+        vision: 'unknown',
+        confidence: 'low',
+      }
+      return { ...prev, [r]: { ...curMap, [id]: patch(cur) } }
+    })
   }
 
   const setEffort = (id: string, level: string, value: string | null | undefined): void => {
-    setDetections((prev) => {
-      const cur: DetectionResult = prev[id] ?? ({ id, found: true, reasoning: 'unknown', vision: 'unknown', confidence: 'low' } as DetectionResult)
+    updateDetection(id, (cur) => {
       const efforts: ReasoningEfforts = { ...(cur.reasoningEfforts ?? {}) }
-      if (value === undefined || value === null) delete (efforts as Record<string, string | null>)[level]
+      // undefined removes the level; null is the legal wire value for `off`.
+      if (value === undefined) delete (efforts as Record<string, string | null | undefined>)[level]
       else (efforts as Record<string, string | null>)[level] = value
-      const next: DetectionResult = { ...cur, reasoningEfforts: efforts }
-      return { ...prev, [id]: next }
+      return { ...cur, reasoningEfforts: efforts }
     })
   }
 
   const toggleReasoning = (id: string, enabled: boolean): void => {
-    setDetections((prev) => {
-      const cur: DetectionResult = prev[id] ?? ({ id, found: true, reasoning: 'unknown', vision: 'unknown', confidence: 'low' } as DetectionResult)
+    updateDetection(id, (cur) => {
       const knownEfforts = cur.reasoning === true && cur.reasoningEfforts ? cur.reasoningEfforts : undefined
       const efforts: ReasoningEfforts | undefined = enabled ? (knownEfforts ?? defaultManualEfforts()) : undefined
-      const next: DetectionResult = {
-        ...cur,
-        reasoningEfforts: efforts,
-        reasoning: enabled ? 'manual' : 'off',
-      }
-      return { ...prev, [id]: next }
+      return { ...cur, reasoningEfforts: efforts, reasoning: enabled ? 'manual' : 'off' }
     })
   }
 
-  const setVision = (id: string, mode: 'inherit' | 'vision' | 'text-only'): void => {
-    setDetections((prev) => {
-      const cur: DetectionResult = prev[id] ?? ({ id, found: true, reasoning: 'unknown', vision: 'unknown', confidence: 'low' } as DetectionResult)
-      let vision: DetectionResult['vision']
-      let input: InputModality[] | undefined
-      let visionSource: string | undefined
-      if (mode === 'inherit') {
-        vision = 'unknown'
-        input = undefined
-        visionSource = undefined
-      } else if (mode === 'vision') {
-        vision = 'manual'
-        input = ['text', 'image']
-        visionSource = 'manual'
-      } else {
-        vision = 'off'
-        input = ['text']
-        visionSource = 'manual'
-      }
-      const next: DetectionResult = { ...cur, vision, input, visionSource }
-      return { ...prev, [id]: next }
+  const resetEfforts = (id: string): void => {
+    updateDetection(id, (cur) => ({ ...cur, reasoning: 'manual', reasoningEfforts: defaultManualEfforts() }))
+  }
+
+  const toggleLevelEditor = (id: string, level: string, open?: boolean): void => {
+    setEditingLevels((prev) => {
+      const key = `${id}:${level}`
+      const next = new Set(prev)
+      const shouldOpen = open ?? !next.has(key)
+      if (shouldOpen) next.add(key)
+      else next.delete(key)
+      return next
     })
   }
 
   const apply = async (): Promise<void> => {
-    if (!selected || revision === undefined) return
+    if (!selected) return
+    if (revision === undefined) {
+      setError(t('errNotLoaded'))
+      return
+    }
     setBusy(true)
     setError(null)
     setSaved(false)
     try {
-      // collect ids where either reasoning or vision has been touched
-      const touched = Object.keys(detections).filter((id) => {
-        const d = detections[id]
-        return d.reasoningEfforts !== undefined || d.input !== undefined || d.vision === 'off' || d.vision === 'manual'
-      })
-      // also include models where vision explicitly set to text-only/off (input defined)
-      // if nothing touched, error
-      if (touched.length === 0) {
-        // check if any detection has been made at all (user may have detected but not changed)
-        const hasDetections = Object.keys(detections).length > 0
-        if (!hasDetections) {
-          setError(t('errNothingToApply'))
-          return
-        }
-        // If detections exist but no explicit edits, still allow applying detected vision/reasoning
-        // So gather those where detection implies a write
-        const implied = Object.keys(detections).filter((id) => {
-          const d = detections[id]
-          return d.vision === true || d.vision === false || d.reasoning === true
-        })
-        if (implied.length === 0) {
-          setError(t('errNothingToApply'))
-          return
-        }
+      if (Object.keys(detections).length === 0) {
+        setError(t('errNothingToApply'))
+        return
       }
 
-      // Build next models: merge detections into existing models
+      // Merge detections into existing models. `input` (vision) is never
+      // written or removed — cloneJson carries any official-UI value through.
       const nextModels: Array<Record<string, unknown>> = selected.models.map((m) => {
         const id = (m as { id: string }).id
         const det = detections[id]
@@ -751,28 +771,18 @@ function ModelCapabilitiesPanel({ api, t }: PanelProps): React.ReactElement {
         } else if (det.reasoning === 'off') {
           out.reasoningEfforts = false
         }
-        // vision: write input field
-        if (det.input !== undefined) {
-          out.input = cloneJson(det.input)
-        } else if (det.vision === 'off') {
-          out.input = ['text']
-        } else if (det.vision === 'unknown' && det.visionSource === undefined) {
-          // inherit: remove explicit input so it falls back to catalog/default
-          delete out.input
-        }
         if (det.contextWindow !== undefined) out.contextWindow = det.contextWindow
         if (det.maxTokens !== undefined) out.maxTokens = det.maxTokens
         if (det.name !== undefined) out.name = det.name
         return out
       })
 
-      // Append new models advertised by endpoint but not yet configured, if they have any capability
+      // Append models advertised by the endpoint but not configured yet.
       const configured = new Set<string>(selected.models.map((m) => (m as { id: string }).id))
       for (const id of Object.keys(detections)) {
         if (configured.has(id)) continue
         const det = detections[id]
-        // only add if vision or reasoning or found
-        if (!det.found && det.reasoning === 'unknown' && det.vision === 'unknown') continue
+        if (!det.found && det.reasoning === 'unknown') continue
         const entry: Record<string, unknown> = { id }
         if (det.name !== undefined) entry.name = det.name
         if (det.contextWindow !== undefined) entry.contextWindow = det.contextWindow
@@ -783,7 +793,6 @@ function ModelCapabilitiesPanel({ api, t }: PanelProps): React.ReactElement {
         } else if (det.reasoning === false) {
           entry.reasoningEfforts = false
         }
-        if (det.input !== undefined) entry.input = cloneJson(det.input)
         nextModels.push(entry)
       }
 
@@ -796,6 +805,9 @@ function ModelCapabilitiesPanel({ api, t }: PanelProps): React.ReactElement {
       )
       setRevision(typeof view.revision === 'number' ? view.revision : undefined)
       setSaved(true)
+      setJustSaved(true)
+      window.clearTimeout(savedTimer.current)
+      savedTimer.current = window.setTimeout(() => setJustSaved(false), 2500)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -806,12 +818,13 @@ function ModelCapabilitiesPanel({ api, t }: PanelProps): React.ReactElement {
 
   const configuredIds: string[] = selected ? selected.models.map((m) => (m as { id: string }).id) : []
   const models: string[] = Array.from(new Set<string>([...configuredIds, ...Object.keys(detections)]))
+  const hasDetections = Object.keys(detections).length > 0
 
   return (
     <div className="mc-root">
       <h2 className="mc-title">{t('title')}</h2>
       <p className="mc-intro">{t('intro')}</p>
-      <div className="mc-row">
+      <div className="mc-toolbar">
         <select
           className="mc-select"
           value={route}
@@ -824,82 +837,41 @@ function ModelCapabilitiesPanel({ api, t }: PanelProps): React.ReactElement {
             </option>
           ))}
         </select>
-        <button className="mc-btn ghost" onClick={prefillFromCatalog} disabled={busy || !selected}>
-          {t('prefill')}
-        </button>
-        <button className="mc-btn" onClick={detectAll} disabled={busy || !selected}>
-          {busy ? t('working') : t('detect')}
-        </button>
-        <button className="mc-btn ghost" onClick={apply} disabled={busy || Object.keys(detections).length === 0}>
-          {t('apply')}
+        <span className="mc-spacer" />
+        <button className="mc-btn ghost" onClick={() => void runDetect(true)} disabled={busy || !selected}>
+          {busy ? t('working') : hasDetections ? t('redetect') : t('detect')}
         </button>
       </div>
       {error ? <p className="mc-err">{error}</p> : null}
       {notice ? <p className="mc-note">{notice}</p> : null}
-      {saved ? <p className="mc-note">{fmt(t('saved'), { route })}</p> : null}
+      {saved ? <p className="mc-ok">{fmt(t('saved'), { route })}</p> : null}
       {!selected ? <p className="mc-intro">{t('noProviders')}</p> : null}
       <ul className="mc-list">
         {models.map((id) => {
           const det = detections[id]
           const configured = selected?.models.find((m) => (m as { id: string }).id === id) as
-            | (Record<string, unknown> & { input?: InputModality[]; reasoningEfforts?: unknown })
+            | (Record<string, unknown> & { reasoningEfforts?: unknown })
             | undefined
-          const configuredInput = configured?.input as InputModality[] | undefined
           const configuredEfforts = configured?.reasoningEfforts as ReasoningEfforts | false | undefined
 
-          // badge for reasoning
           const rBadge = det ? (
             det.reasoning === true || det.reasoning === 'manual' ? (
               <span className="mc-badge yes">{t('badgeReasoning')}</span>
-            ) : det.reasoning === 'off' ? (
-              <span className="mc-badge no">{t('badgeOff')}</span>
+            ) : det.reasoning === 'off' || det.reasoning === false ? (
+              <span className="mc-badge">{t('badgeOff')}</span>
             ) : (
-              <span className="mc-badge unk">{t('badgeUnknown')}</span>
+              <span className="mc-badge">{t('badgeUnknown')}</span>
             )
           ) : configuredEfforts !== undefined ? (
             configuredEfforts === false ? (
-              <span className="mc-badge no">{t('badgeOff')}</span>
+              <span className="mc-badge">{t('badgeOff')}</span>
             ) : (
               <span className="mc-badge yes">{t('badgeReasoning')}</span>
             )
           ) : null
 
-          // badge for vision
-          const vBadge = (() => {
-            // detection takes precedence
-            if (det) {
-              if (det.vision === true || det.vision === 'manual') return <span className="mc-badge vision">{t('badgeVision')}</span>
-              if (det.vision === 'off') return <span className="mc-badge no">{t('badgeTextOnly')}</span>
-              if (det.vision === 'unknown' && det.input?.includes('image')) return <span className="mc-badge vision">{t('badgeVision')}</span>
-              return <span className="mc-badge unk">{t('badgeUnknown')}</span>
-            }
-            if (configuredInput) {
-              return configuredInput.includes('image') ? (
-                <span className="mc-badge vision">{t('badgeVision')}</span>
-              ) : (
-                <span className="mc-badge no">{t('badgeTextOnly')}</span>
-              )
-            }
-            return <span className="mc-badge unk">{t('badgeUnknown')}</span>
-          })()
-
           const reasoningEnabled = !!det && det.reasoningEfforts !== undefined
           const efforts: ReasoningEfforts = reasoningEnabled ? (det.reasoningEfforts as ReasoningEfforts) : {}
-
-          // vision mode for select
-          const visionMode: 'inherit' | 'vision' | 'text-only' = (() => {
-            if (det) {
-              if (det.vision === 'manual' || (det.vision === true && det.input?.includes('image'))) return 'vision'
-              if (det.vision === 'off') return 'text-only'
-              if (det.input === undefined && det.vision === 'unknown') return 'inherit'
-              if (det.input?.includes('image')) return 'vision'
-              if (det.input && !det.input.includes('image')) return 'text-only'
-              return 'inherit'
-            }
-            if (configuredInput?.includes('image')) return 'vision'
-            if (configuredInput && !configuredInput.includes('image')) return 'text-only'
-            return 'inherit'
-          })()
 
           const cap: string[] = []
           const ctxWindow = det?.contextWindow ?? (configured?.contextWindow as number | undefined)
@@ -914,91 +886,94 @@ function ModelCapabilitiesPanel({ api, t }: PanelProps): React.ReactElement {
                 {det?.name || (configured?.name as string | undefined) ? (
                   <span className="mc-name">{String(det?.name ?? (configured?.name as string | undefined))}</span>
                 ) : null}
-                {rBadge}
-                {vBadge}
-                {det?.reasoningSource === 'endpoint' || det?.reasoningSource === 'llm catalog' ? (
-                  <span className="mc-name">{det.reasoningSource === 'endpoint' ? t('srcEndpoint') : t('srcCatalog')}</span>
-                ) : null}
-                {det?.visionSource === 'endpoint' || det?.visionSource === 'llm catalog' ? (
-                  <span className="mc-name">{det.visionSource === 'endpoint' ? t('srcEndpoint') : t('srcCatalog')}</span>
-                ) : null}
-                {!configured ? <span className="mc-badge unk">{t('badgeNotConfigured')}</span> : null}
+                <span className="mc-head-badges">
+                  {rBadge}
+                  {det?.reasoningSource === 'endpoint' || det?.reasoningSource === 'llm catalog' ? (
+                    <span className="mc-src">
+                      {det.reasoningSource === 'endpoint' ? t('srcEndpoint') : t('srcCatalog')}
+                    </span>
+                  ) : null}
+                  {!configured ? <span className="mc-badge new">{t('badgeNotConfigured')}</span> : null}
+                </span>
               </div>
               {cap.length ? <div className="mc-cap">{cap.join(' · ')}</div> : null}
               {det?.note ? <div className="mc-note">{det.note}</div> : null}
-
-              {/* Vision */}
-              <div className="mc-vision">
-                <span style={{ fontSize: 13 }}>{t('visionLabel')}:</span>
-                <label>
-                  <input
-                    type="radio"
-                    name={`vision-${id}`}
-                    checked={visionMode === 'inherit'}
-                    disabled={busy}
-                    onChange={() => setVision(id, 'inherit')}
-                  />
-                  {t('visionInherit')}
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name={`vision-${id}`}
-                    checked={visionMode === 'vision'}
-                    disabled={busy}
-                    onChange={() => setVision(id, 'vision')}
-                  />
-                  {t('visionOn')}
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name={`vision-${id}`}
-                    checked={visionMode === 'text-only'}
-                    disabled={busy}
-                    onChange={() => setVision(id, 'text-only')}
-                  />
-                  {t('visionOff')}
-                </label>
-              </div>
-
               <div className="mc-divider" />
-
-              {/* Reasoning */}
-              <label className="mc-toggle">
-                <input
-                  type="checkbox"
-                  checked={reasoningEnabled}
-                  disabled={busy}
-                  onChange={(e) => toggleReasoning(id, e.target.checked)}
-                />
-                {t('offerLevels')}
-              </label>
+              <div className="mc-switch-row">
+                <label className="mc-switch-label">
+                  <span className="mc-switch">
+                    <input
+                      type="checkbox"
+                      checked={reasoningEnabled}
+                      disabled={busy}
+                      onChange={(e) => toggleReasoning(id, e.target.checked)}
+                    />
+                    <span className="mc-track">
+                      <span className="mc-knob" />
+                    </span>
+                  </span>
+                  <span>{t('offerLevels')}</span>
+                </label>
+                {reasoningEnabled ? (
+                  <button className="mc-link" onClick={() => resetEfforts(id)} disabled={busy}>
+                    {t('resetLevels')}
+                  </button>
+                ) : null}
+              </div>
               {reasoningEnabled ? (
                 <div className="mc-efforts">
-                  {THINKING_LEVELS.map((level) => (
-                    <label key={level} className="mc-chip">
-                      <input
-                        type="checkbox"
-                        checked={level in efforts}
-                        disabled={busy}
-                        onChange={(e) =>
-                          e.target.checked
-                            ? setEffort(id, level, level === 'off' ? null : level)
-                            : setEffort(id, level, undefined)
-                        }
-                      />
-                      {level}
-                      {level in efforts && level !== 'off' ? (
-                        <input
-                          type="text"
-                          value={efforts[level as keyof ReasoningEfforts] ?? ''}
-                          disabled={busy}
-                          onChange={(e) => setEffort(id, level, e.target.value)}
-                        />
-                      ) : null}
-                    </label>
-                  ))}
+                  <span className="mc-hint">{t('levelsHint')}</span>
+                  <div className="mc-pills">
+                    {THINKING_LEVELS.map((level) => {
+                      const active = level in efforts
+                      const editable = active && level !== 'off'
+                      const editing = editable && editingLevels.has(`${id}:${level}`)
+                      return (
+                        <label key={level} className={active ? 'mc-pill active' : 'mc-pill'}>
+                          <input
+                            type="checkbox"
+                            checked={active}
+                            disabled={busy}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setEffort(id, level, level === 'off' ? null : level)
+                              } else {
+                                setEffort(id, level, undefined)
+                                toggleLevelEditor(id, level, false)
+                              }
+                            }}
+                          />
+                          <span>{level}</span>
+                          {editable ? (
+                            <button
+                              type="button"
+                              className={editing ? 'mc-pill-edit on' : 'mc-pill-edit'}
+                              disabled={busy}
+                              aria-label={t('editLevel')}
+                              title={t('editLevel')}
+                              onClick={() => toggleLevelEditor(id, level)}
+                            >
+                              <svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true">
+                                <path
+                                  d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+                                  fill="currentColor"
+                                />
+                              </svg>
+                            </button>
+                          ) : null}
+                          {editing ? (
+                            <input
+                              type="text"
+                              value={efforts[level as keyof ReasoningEfforts] ?? ''}
+                              disabled={busy}
+                              autoFocus
+                              onChange={(e) => setEffort(id, level, e.target.value)}
+                            />
+                          ) : null}
+                        </label>
+                      )
+                    })}
+                  </div>
                 </div>
               ) : null}
             </li>
@@ -1007,14 +982,14 @@ function ModelCapabilitiesPanel({ api, t }: PanelProps): React.ReactElement {
       </ul>
       {models.length > 0 ? (
         <div className="mc-footer">
-          <span className="mc-name">{fmt(t('modelCount'), { n: models.length })}</span>
-          <span className="mc-footer-spacer" />
+          <span className="mc-count">{fmt(t('modelCount'), { n: models.length })}</span>
+          <span className="mc-spacer" />
           <button
             className="mc-btn"
-            onClick={apply}
-            disabled={busy || Object.keys(detections).length === 0}
+            onClick={() => void apply()}
+            disabled={busy || !selected || !hasDetections}
           >
-            {busy ? t('working') : t('apply')}
+            {busy ? t('working') : justSaved ? t('savedDone') : t('apply')}
           </button>
         </div>
       ) : null}
