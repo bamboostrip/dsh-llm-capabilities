@@ -1,7 +1,7 @@
 {
   "name": "dsh-llm-capabilities",
-  "version": "0.1.4",
-  "description": "DSH plugin: auto-detect and configure model capabilities (reasoningEfforts + input modalities) for llm-pi-ai. Successor to dsh-reasoning-efforts.",
+  "version": "0.1.5",
+  "description": "DSH plugin: auto-detect and configure model capabilities (reasoningEfforts + capacities) for llm-pi-ai. Vision (input) is managed by the official UI. Successor to dsh-reasoning-efforts.",
   "type": "module",
   "packageManager": "pnpm@11.22.0",
   "main": "dist/index.js",
@@ -47,8 +47,6 @@
     "reasoning-effort",
     "thinking-level",
     "vision",
-    "input-modalities",
-    "multimodal",
     "model-capabilities",
     "llm-pi-ai"
   ],

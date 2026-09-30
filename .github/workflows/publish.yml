@@ -5,8 +5,10 @@ name: Publish to npm
 # trusts this exact workflow file (the "Trusted Publisher" row configured on
 # the package's npmjs Settings page must match: publisher "GitHub Actions",
 # org/user, repository, and this filename, publish.yml).
-# Triggered by pushing a version tag (v*). Note: creating a GitHub Release
-# from that tag does NOT re-trigger this workflow (no duplicate publishes).
+# Triggered by pushing a version tag (v*). After a successful publish, a
+# GitHub Release is created for the tag, using the matching CHANGELOG.md
+# section as the notes. Note: creating a GitHub Release from that tag does
+# NOT re-trigger this workflow (no duplicate publishes).
 on:
   push:
     tags:
@@ -17,7 +19,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # create the GitHub Release for the pushed tag
       id-token: write # OIDC token for npm trusted publishing + provenance
     steps:
       - uses: actions/checkout@v5
@@ -42,3 +44,25 @@ jobs:
 
       - name: Publish
         run: npm publish --access public --provenance
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VERSION" '
+            $0 ~ "^## " ver "([[:space:]]|$)" {found = 1; next}
+            found && /^## / {exit}
+            found {print}
+          ' CHANGELOG.md > release-body.md
+          if [ -s release-body.md ]; then
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file release-body.md
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --generate-notes
+          fi
